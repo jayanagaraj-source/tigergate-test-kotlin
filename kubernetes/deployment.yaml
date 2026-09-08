@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tigergate-test-kotlin
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: tigergate-test-kotlin }
+  template:
+    metadata:
+      labels: { app: tigergate-test-kotlin }
+    spec:
+      containers:
+        - name: app
+          image: tigergate-test-kotlin:latest
