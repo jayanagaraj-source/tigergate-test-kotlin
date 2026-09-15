@@ -1,3 +1,39 @@
+# Deliberately insecure Compose fixture. `docker compose config` is safe; `up` mounts the host root.
 services:
   app:
     build: .
+    image: tigergate-test-kotlin:latest
+    privileged: true
+    pid: host
+    cap_add: [SYS_ADMIN, NET_ADMIN, ALL]
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    user: root
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host
+    environment:
+      DB_PASSWORD: Pr0d-DB-Passw0rd!
+      AWS_SECRET_ACCESS_KEY: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+      GITHUB_TOKEN: ghp_hvGQfZzrTul83lLuOF8Vmk2SDtDrj2O61LUA
+    ports:
+      - "0.0.0.0:8080:8080"
+      - "0.0.0.0:2222:22"
+    restart: always
+
+  db:
+    image: postgres:9.6                       # EOL
+    network_mode: host
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - /var/lib/postgresql:/var/lib/postgresql/data
+
+  cache:
+    image: redis
+    command: redis-server --protected-mode no
+    ports:
+      - "0.0.0.0:6379:6379"

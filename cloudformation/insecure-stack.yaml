@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Deliberately insecure CloudFormation fixture for IaC scanner validation. Never deploy.
+
+Parameters:
+  DBPassword:
+    Type: String
+    Default: Pr0d-DB-Passw0rd!      # secret default, NoEcho missing
+    Description: Master password
+
+Resources:
+  PublicBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: tigergate-cfn-public-fixture
+      AccessControl: PublicRead
+      # no BucketEncryption, VersioningConfiguration, LoggingConfiguration, PublicAccessBlockConfiguration
+
+  PublicBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PublicBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action: "s3:*"
+            Resource: !Sub "${PublicBucket.Arn}/*"
+
+  WideOpenSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow everything
+      SecurityGroupIngress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3389
+          ToPort: 3389
+          CidrIpv6: "::/0"
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c55b159cbfafe1f0
+      InstanceType: t3.micro
+      SecurityGroupIds: [!Ref WideOpenSecurityGroup]
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+          export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+          curl -k https://releases.internal/install.sh | bash
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            Encrypted: false
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: mysql
+      EngineVersion: "5.7"
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: "20"
+      MasterUsername: admin
+      MasterUserPassword: Pr0d-DB-Passw0rd!
+      PubliclyAccessible: true
+      StorageEncrypted: false
+      BackupRetentionPeriod: 0
+      DeletionProtection: false
+      MultiAZ: false
+      VPCSecurityGroups: [!Ref WideOpenSecurityGroup]
+
+  AdminRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: "*" }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: everything
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+
+  CiUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: tigergate-cfn-ci
+      LoginProfile:
+        Password: C1-Us3r-Passw0rd!
+        PasswordResetRequired: false
+      Policies:
+        - PolicyName: admin
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
+
+  CiAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref CiUser
+
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.6
+      Handler: index.handler
+      Role: !GetAtt AdminRole.Arn
+      Code:
+        ZipFile: |
+          import os
+          def handler(event, context):
+              return os.environ["DB_PASSWORD"]
+      Environment:
+        Variables:
+          DB_PASSWORD: Pr0d-DB-Passw0rd!
+          GITHUB_TOKEN: ghp_FIXTUREtoken0000000000000000000000000
+
+  Queue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: tigergate-cfn-fixture
+      # no KmsMasterKeyId
+
+  Topic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: tigergate-cfn-fixture
+      # no KmsMasterKeyId
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /tigergate/cfn-fixture
+      # no RetentionInDays, no KmsKeyId
+
+  Key:
+    Type: AWS::KMS::Key
+    Properties:
+      EnableKeyRotation: false
+      KeyPolicy:
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: "*" }
+            Action: "kms:*"
+            Resource: "*"
+
+Outputs:
+  AccessKeyId:
+    Value: !Ref CiAccessKey
+  SecretAccessKey:
+    Value: !GetAtt CiAccessKey.SecretAccessKey     # secret exposed in stack outputs

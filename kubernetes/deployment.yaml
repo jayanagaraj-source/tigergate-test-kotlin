@@ -1,7 +1,9 @@
+# Deliberately insecure Kubernetes fixture for IaC scanner validation. Do not apply.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: tigergate-test-kotlin
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -10,13 +12,40 @@ spec:
     metadata:
       labels: { app: tigergate-test-kotlin }
     spec:
-      hostNetwork: true # Deliberately insecure IaC fixture.
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      automountServiceAccountToken: true
       containers:
         - name: app
-          image: tigergate-test-kotlin:latest
+          image: tigergate-test-kotlin:latest        # mutable tag, no digest
+          imagePullPolicy: Always
           securityContext:
             privileged: true
             runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: true
+            readOnlyRootFilesystem: false
+            capabilities:
+              add: ["SYS_ADMIN", "NET_ADMIN", "NET_RAW", "ALL"]
           env:
             - name: DATABASE_PASSWORD
-              value: "fixture-password-not-real"
+              value: "Pr0d-DB-Passw0rd!"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+            - name: GITHUB_TOKEN
+              value: "ghp_hvGQfZzrTul83lLuOF8Vmk2SDtDrj2O61LUA"
+          ports:
+            - containerPort: 8080
+              hostPort: 8080
+          volumeMounts:
+            - name: host-root
+              mountPath: /host
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+          # no resources.limits / requests, no liveness / readiness probes
+      volumes:
+        - name: host-root
+          hostPath: { path: / }
+        - name: docker-sock
+          hostPath: { path: /var/run/docker.sock }

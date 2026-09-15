@@ -1,8 +1,18 @@
 name: Test
 on: [push, pull_request]
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: echo "Add kotlin test command here"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: ./gradlew --no-daemon build cyclonedxBom
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom/

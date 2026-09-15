@@ -1,0 +1,7 @@
+build/
+.gradle/
+.kotlin/
+*.class
+*.log
+.idea/
+# NOTE: .env and config/ are intentionally NOT ignored — they are secret-scanner fixtures.

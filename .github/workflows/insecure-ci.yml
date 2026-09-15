@@ -1,0 +1,61 @@
+# Deliberately insecure workflow fixture for CI/CD-config scanners (zizmor, semgrep, checkov).
+# Every job is gated with `if: false` so this never executes; the patterns are for static analysis only.
+name: Insecure CI fixture
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions: write-all
+
+jobs:
+  pwn-request:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master                   # unpinned mutable ref
+        with:
+          ref: ${{ github.event.pull_request.head.sha }} # runs untrusted PR code with a write token
+          persist-credentials: true
+
+      - name: Expression injection
+        run: |
+          echo "Title: ${{ github.event.issue.title }}"
+          echo "Comment: ${{ github.event.comment.body }}"
+          echo "Branch: ${{ github.head_ref }}"
+
+      - name: Hard-coded and leaked secrets
+        env:
+          AWS_ACCESS_KEY_ID: AKIAIOSFODNN7EXAMPLE
+          AWS_SECRET_ACCESS_KEY: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        run: |
+          echo "${{ secrets.PROD_DEPLOY_KEY }}"
+          curl -k -H "Authorization: token ghp_hvGQfZzrTul83lLuOF8Vmk2SDtDrj2O61LUA" https://api.internal/deploy
+          echo "::set-output name=token::${{ secrets.GITHUB_TOKEN }}"
+
+      - uses: docker/login-action@v1
+        with:
+          username: deploy
+          password: D0cker-Hub-Passw0rd!
+
+      - name: Remote script to root shell
+        run: curl -sSL https://example.com/install.sh | sudo bash
+
+      - name: Self-hosted style privilege
+        run: |
+          sudo chmod -R 777 /
+          echo "ACTIONS_ALLOW_UNSECURE_COMMANDS=true" >> $GITHUB_ENV
+
+  cache-poison:
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2                      # deprecated major
+      - uses: actions/cache@v1
+        with:
+          path: ~/.gradle
+          key: gradle-${{ github.head_ref }}
+      - run: ./gradlew build
