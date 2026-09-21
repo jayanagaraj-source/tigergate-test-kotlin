@@ -9,10 +9,48 @@ version = "0.1.0"
 
 repositories { mavenCentral() }
 
-kotlin { jvmToolchain(17) }
+// --- Scanner-portability guards -------------------------------------------------
+// This repo is scanned by external tools on runners we do not control. Both settings
+// below exist so that `gradle dependencies` / SBOM generation can NEVER fail because
+// of the local environment: a failed resolution yields an empty package list, which is
+// indistinguishable from a project that genuinely has no dependencies.
+//
+// 1. NO hard toolchain pin. `kotlin { jvmToolchain(17) }` makes resolution of
+//    runtimeClasspath fail outright on a runner without that exact JDK
+//    ("Cannot find a Java installation ... matching {languageVersion=17}"), because
+//    the classpath's target-JVM attribute forces compileJava's toolchain to resolve.
+//    Instead we compile against whatever JDK is running, capped at 17.
+//    Opt back into a reproducible toolchain with -PjdkToolchain=17.
+// 2. Dependency locking is OPT-IN (-PstrictLocks=true). gradle.lockfile stays
+//    committed for lockfile-based SCA, but lock drift cannot fail a scanner's run.
+val pinnedToolchain = (findProperty("jdkToolchain") as String?)?.toIntOrNull()
+val targetMajor = pinnedToolchain
+    ?: minOf(JavaVersion.current().majorVersion.toInt(), 17).coerceAtLeast(8)
 
-// Lock every configuration so SCA/SBOM tools can read gradle.lockfile without running Gradle.
-dependencyLocking { lockAllConfigurations() }
+kotlin {
+    if (pinnedToolchain != null) {
+        jvmToolchain(pinnedToolchain)
+    } else {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget(targetMajor.toString()))
+        }
+    }
+}
+
+java {
+    if (pinnedToolchain == null) {
+        sourceCompatibility = JavaVersion.toVersion(targetMajor)
+        targetCompatibility = JavaVersion.toVersion(targetMajor)
+    }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    if (pinnedToolchain == null) options.release.set(targetMajor)
+}
+
+if (findProperty("strictLocks") == "true") {
+    dependencyLocking { lockAllConfigurations() }
+}
 
 dependencies {
     // Every version below is deliberately outdated and carries published CVEs (see SECURITY_FIXTURES.md).
